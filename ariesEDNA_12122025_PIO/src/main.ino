@@ -1,4 +1,6 @@
 #include <Arduino.h>
+//Version 1.1 is for long intervals WITHOUT HCl in the Delrin valve, also includes version ID
+//Version 1 (pre version ID on status menu) as of 12/19/2025. Includes geared absolute encoder
 //Libraries
 #include <EEPROM.h>
 #include <TimeLib.h>  //Time library
@@ -19,6 +21,8 @@
 #include <SoftwareSerial.h>  //include the SoftwareSerial library for atlas scientific EC
 
 //DEFINITIONS
+//Version
+const char FIRMWARE_VERSION[] = "V1.1";
 // Low power timer
 int timerDonePin = 12;         // Pin for sending done signal to the timer
 int powerOnPin = 17;           // Pin for sending signal to turn on mosfet for teensy
@@ -635,7 +639,7 @@ void loop() {
         Serial.println("Stored Valve Position: " + String(currentValvePositionIndex));
         readSampleSettings();  //Read sample settings
         delay(3000);
-        enterSamplingMode();
+        enterHClSafeSamplingMode();
         break;  //Loop the Settings Menu navigation and display
       }
   }
@@ -663,15 +667,21 @@ void statusMenuDisplay() {  // Text to display in the status menu
     display.setTextSize(1);
     // Set the text cursor to top-left corner (0, 0)
     display.setCursor(0, 0);
-    // Print centered status menu with eye icon
-    display.setCursor(22, 0);  // Centered <STATUS MENU>
-    display.print("<STATUS MENU>");
-    display.setCursor(106, 0);  // Eye just to the right
+    // Display status menu title and firmware version
+    display.setCursor(0, 0);
+    display.print("<STATUS MENU ");
+    display.print(FIRMWARE_VERSION);
+    display.print(">");
+    display.setCursor(114, 0); // Eye just to the right
     if (digitalRead(reedSwitchPin) == LOW) {
-      display.print("o");  // Eye open
+      display.print("o"); //Eye open
     } else {
-      display.print("-");  // Eye closed
+      display.print("-"); // Eye closed
     }
+
+
+
+
     //Display current time (hour, minute, second)
     display.setCursor(0, 9);  // Position for T:
     display.print("T:");
@@ -3424,7 +3434,68 @@ void enterSamplingMode() {
   finishSamplingMode();
 }
 
-
+void enterHClSafeSamplingMode() {
+  Serial.println("Starting OLED from HCl Safe sampling mode.");
+  setupOLED();
+  Serial.println("Sampling within 10 minutes!");
+  display.clearDisplay();              // Clear the display
+  display.setTextSize(1);              // Set the text size to 1
+  display.setTextColor(WHITE, BLACK);  // Set the color of the text to normal
+  display.setCursor(0, 0);
+  display.println("Sampling in");
+  display.println("less than");
+  display.println("10 min!");
+  display.display();  // Update the display
+  Serial.println("Current Time: " + String(currentTime));
+  Serial.println("Stored Wake-Up Time: " + String(storedWakeUpTime));
+  while (currentTime < storedWakeUpTime) {
+    currentTime = now();  // Update the existing currentTime variable
+    delay(1000);          // Adjust the delay as needed (e.g., 100 ms)
+  }
+  display.clearDisplay(); // Clear the display
+  display.setTextSize(1); // Set the text size to 1
+  display.setTextColor(WHITE, BLACK); // Set the color of the text to normal
+  display.setCursor(0, 0);
+  display.println("Time to"); // Display message
+  display.println("sample"); // Display message
+  display.println("babyyyy!"); // Display message
+  display.display(); // Update the display
+  closeValve(); //Make sure 3 way valve is closed (resting state for water flow)
+  logData(); //Log all sensor data and time
+  resetZeroPosition(); // Zero valve to ensure good positioning
+  valveSelection = 2; //Set to valve 2 for HCl cleaning
+  sampleValvePosition(); //Rotate stepper to sample valve position
+  delay(100);
+  pumpADirection = 1; // Set pump direction to CCW for cleaning
+  pumpAVolumeTemp = 7; //Set to 7mL, maybe change
+  samplePumpA(); //Run pump A CCW to clean system with HCl
+  delay(600000); //Wait for 10 minutes
+  valveSelection = 1; //Set to valve 1 for flow thru
+  sampleValvePosition(); //Rotate stepper to waste valve position
+  delay(100);
+  pumpAVolumeTemp = 100;  //Set to 100mL, maybe change
+  messageTemp = "Pre-sample";
+  samplePumpA(); //Run pump A to purge system with ambient water
+  delay(100);
+  valveSelection = sampleValve;  //Move to sample valve
+  sampleValvePosition(); //Rotate stepper to sample valve position
+  delay(100);
+  pumpAVolumeTemp = pumpAVolume;  //Set to pump A volume
+  messageTemp = "Sampling";
+  samplePumpA(); //Run pump A to sample water
+  delay(100);
+  openValve(); // Open 3 way for preservative
+  delay(100);
+  samplePumpB(); // Run preservative pump
+  delay(100);
+  closeValve(); // Close 3 way valve (back to normal flow)
+  valveSelection = 1; //Set to valve 1 for flowthru
+  sampleValvePosition(); //Rotate stepper to sample valve position
+  delay(100);
+  logData(); //Log second data point mostly for tracking system use and current draw
+  //Need to stop leaving HCl for interval since it breaks down delrin
+  finishSamplingMode();
+}
 
 void testSampling(){
   resetZeroPosition(); // Zero valve to ensure good positioning
