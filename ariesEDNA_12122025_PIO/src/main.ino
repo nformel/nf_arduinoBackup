@@ -1,5 +1,7 @@
 #include <Arduino.h>
-//Version 1.1 is for long intervals WITHOUT HCl in the Delrin valve, also includes version ID
+//Version 1.1 limits the soak time for HCl in the system to 10 minutes instead of between sample intervals. This is 
+//because the Delrin valve is suceptible to HCl degredation, V1.1 also includes version ID in the status menu and adjusts 
+//the zeroing feature to use 63 full signals in the photogate instead of 14.
 //Version 1 (pre version ID on status menu) as of 12/19/2025. Includes geared absolute encoder
 //Libraries
 #include <EEPROM.h>
@@ -2364,7 +2366,8 @@ void sampleValvePosition() {
   } else {
     Serial.println("ERROR: EEPROM write failed! Read: " + String(verifyValvePosition) + ", Expected: " + String(valveSelection));
   }
-  currentValvePositionIndex = selectedValvePositionIndex;
+  //currentValvePositionIndex = selectedValvePositionIndex; //got rid of this to avoid positioning issue I hope
+  currentValvePositionIndex = valveSelection;
   Serial.println("Valve position adjustment complete.");
 }
 
@@ -2388,7 +2391,6 @@ void moveValveOneMinus() {
   Serial.println("Backward movement complete.");
 }
 
-
 void resetZeroPosition() {
   Serial.println("Resetting zero valve position.");
   digitalWrite(stepperReset, HIGH);
@@ -2403,7 +2405,7 @@ void resetZeroPosition() {
   int lastState = digitalRead(photoHomePin);
   Serial.print("Photo Sensor Initial State: ");
   Serial.println(lastState);
-  while (signalCount < 7) {  // Stop on the 7th HIGH signal
+  while (signalCount < 31) {  // Stop on the 31st HIGH signal
     // Step the motor
     digitalWrite(stepperStep, HIGH);
     delayMicroseconds(STEP_DELAY_US);
@@ -2417,7 +2419,7 @@ void resetZeroPosition() {
       Serial.println(signalCount);
     }
   }
-  Serial.println("7th photogate trigger reached. Stopping motor.");
+  Serial.println("31st photogate trigger reached. Stopping motor.");
   // Reset raw encoder count to zero
   noInterrupts();
   encoderCount = 0;
@@ -2446,7 +2448,7 @@ void zeroValveNow() {
   int lastState = digitalRead(photoHomePin);
   Serial.print("Photo Sensor Initial State: ");
   Serial.println(lastState);
-  while (signalCount < 7) {  // Stop on the 7th HIGH signal
+  while (signalCount < 31) {  // Stop on the 31st HIGH signal
     // Step the motor
     digitalWrite(stepperStep, HIGH);
     delayMicroseconds(STEP_DELAY_US);
@@ -2460,7 +2462,7 @@ void zeroValveNow() {
       Serial.println(signalCount);
     }
   }
-  Serial.println("7th photogate trigger reached. Stopping motor.");
+  Serial.println("31st photogate trigger reached. Stopping motor.");
   // Reset raw encoder count to zero
   noInterrupts();
   encoderCount = 0;
@@ -3470,6 +3472,7 @@ void enterHClSafeSamplingMode() {
   pumpAVolumeTemp = 7; //Set to 7mL, maybe change
   samplePumpA(); //Run pump A CCW to clean system with HCl
   delay(600000); //Wait for 10 minutes
+  pumpADirection = 0; // Switch Pump A back to CW for purging and sampling
   valveSelection = 1; //Set to valve 1 for flow thru
   sampleValvePosition(); //Rotate stepper to waste valve position
   delay(100);
